@@ -944,6 +944,20 @@
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
       border: 1.5px solid #e2e8f0;
       flex-shrink: 0;
+      transition: border-color 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease;
+    }
+
+    .palette-card.is-delete-target {
+      border-color: #f87171;
+      background: #fef2f2;
+      box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.25);
+    }
+
+    .palette-card.is-delete-target .section-title span:first-child::after {
+      content: ' （ここにおくと けせる）';
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #dc2626;
     }
 
     .section-title {
@@ -2164,7 +2178,7 @@
       <div class="palette-card">
         <div class="section-title">
           <span>🧩 つかえるブロック</span>
-          <span class="hint-small">クリックか ひっぱっておく</span>
+          <span class="hint-small">クリックか ひっぱっておく／ここにもどすと けせる</span>
         </div>
         <div class="palette-blocks" id="palette-blocks"></div>
       </div>
@@ -2897,6 +2911,7 @@
     const statStepsEl = document.getElementById('stat-steps');
     const statBlocksEl = document.getElementById('stat-blocks');
     const paletteBlocksEl = document.getElementById('palette-blocks');
+    const paletteCardEl = paletteBlocksEl ? paletteBlocksEl.closest('.palette-card') : null;
     const workspaceArea = document.getElementById('workspace-area');
     const mainStack = document.getElementById('main-stack');
     const emptyHint = document.getElementById('empty-hint');
@@ -3630,6 +3645,21 @@
       updateStats();
     }
 
+    /** 指定ブロックがあるステージの「最初のプログラム状態」に戻す */
+    function restoreInitialWorkspaceBlocks() {
+      const stage = STAGES[currentStageIndex];
+      if (currentCourse === 'master') return false;
+      if (!stage || !stage.designatedBlocks || stage.designatedBlocks.length === 0) return false;
+      clearAllBlocks(false);
+      hasDeletedDesignated = false;
+      stage.designatedBlocks.forEach(def => {
+        mainStack.appendChild(createDesignatedBlock(def));
+      });
+      checkEmptyHint();
+      updateStats();
+      return true;
+    }
+
     /* ========================================================
        6. パレットのブロック表示
     ======================================================== */
@@ -3737,7 +3767,21 @@
       dragGhost.el.style.top = `${clientY - dragGhost.offsetY}px`;
     }
 
+    function isPointOverPalette(x, y) {
+      if (!paletteCardEl) return false;
+      const rect = paletteCardEl.getBoundingClientRect();
+      return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+    }
+
+    function setPaletteDeleteTarget(active) {
+      if (!paletteCardEl) return;
+      paletteCardEl.classList.toggle('is-delete-target', Boolean(active));
+    }
+
     function getStackAtPoint(x, y) {
+      if (draggedSource && draggedSource.mode === 'move' && isPointOverPalette(x, y)) {
+        return null;
+      }
       const movingEl = draggedSource && draggedSource.mode === 'move' ? draggedSource.el : null;
       const hitEls = document.elementsFromPoint(x, y);
       for (const hit of hitEls) {
@@ -3758,6 +3802,12 @@
     }
 
     function updateDropIndicatorAt(x, y) {
+      const overPaletteDelete = draggedSource && draggedSource.mode === 'move' && isPointOverPalette(x, y);
+      setPaletteDeleteTarget(overPaletteDelete);
+      if (overPaletteDelete) {
+        if (dropIndicator.parentNode) dropIndicator.remove();
+        return;
+      }
       const stack = getStackAtPoint(x, y);
       if (!stack) {
         if (dropIndicator.parentNode) dropIndicator.remove();
@@ -3769,6 +3819,20 @@
       } else {
         stack.insertBefore(dropIndicator, afterElement);
       }
+    }
+
+    function removeDraggedWorkspaceBlock() {
+      if (!draggedSource || draggedSource.mode !== 'move' || !draggedSource.el) return false;
+      const el = draggedSource.el;
+      Sound.click();
+      if (el.dataset.isDesignated === 'true' || el.querySelector('[data-is-designated="true"]')) {
+        hasDeletedDesignated = true;
+        setStatus('⚠️ 指定ブロックを けしたよ（パーフェクトには 指定ブロックをつかおう）', 'error');
+      }
+      el.remove();
+      checkEmptyHint();
+      updateStats();
+      return true;
     }
 
     function commitDropAtIndicator() {
@@ -3802,6 +3866,7 @@
         draggedSource.el.classList.remove('dragging');
       }
       if (dropIndicator.parentNode) dropIndicator.remove();
+      setPaletteDeleteTarget(false);
       document.body.classList.remove('is-block-dragging');
       pendingPointerDrag = null;
       activePointerDrag = null;
@@ -3861,7 +3926,11 @@
         suppressPaletteClick = true;
         setTimeout(() => { suppressPaletteClick = false; }, 400);
       }
-      commitDropAtIndicator();
+      if (draggedSource && draggedSource.mode === 'move' && isPointOverPalette(e.clientX, e.clientY)) {
+        removeDraggedWorkspaceBlock();
+      } else {
+        commitDropAtIndicator();
+      }
       try {
         activePointerDrag.originEl.releasePointerCapture(e.pointerId);
       } catch (_) { /* ignore */ }
@@ -4640,6 +4709,8 @@
     btnReset.addEventListener('click', () => {
       Sound.click();
       shouldStop = true;
+      // 指定（固定）ブロックがあるステージは、プログラムも最初の状態に戻す
+      restoreInitialWorkspaceBlocks();
       resetRobot();
       setStatus('⏹️ 最初にもどしたよ！もう一度ためしてみよう。');
     });
