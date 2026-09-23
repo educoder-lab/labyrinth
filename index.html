@@ -944,20 +944,106 @@
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
       border: 1.5px solid #e2e8f0;
       flex-shrink: 0;
-      transition: border-color 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease;
+      position: relative;
+      transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
     }
 
-    .palette-card.is-delete-target {
-      border-color: #f87171;
-      background: #fef2f2;
-      box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.25);
+    .palette-delete-zone {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 56px;
+      margin-top: 2px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 2.5px dashed #f87171;
+      background: linear-gradient(180deg, #fff1f2 0%, #fecdd3 100%);
+      color: #b91c1c;
+      font-weight: 900;
+      font-size: 0.95rem;
+      letter-spacing: 0.02em;
+      pointer-events: none;
+      animation: palette-delete-pulse 1.1s ease-in-out infinite;
     }
 
-    .palette-card.is-delete-target .section-title span:first-child::after {
-      content: ' （ここにおくと けせる）';
+    .palette-delete-zone .palette-delete-icon {
+      font-size: 1.45rem;
+      line-height: 1;
+    }
+
+    .palette-delete-zone .palette-delete-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      line-height: 1.25;
+    }
+
+    .palette-delete-zone .palette-delete-sub {
       font-size: 0.72rem;
       font-weight: 700;
-      color: #dc2626;
+      color: #e11d48;
+      opacity: 0.9;
+    }
+
+    body.is-block-moving .palette-card {
+      border-color: #fb7185;
+      background: #fff7f7;
+      box-shadow: 0 0 0 2px rgba(251, 113, 133, 0.2);
+    }
+
+    body.is-block-moving .palette-card > .section-title,
+    body.is-block-moving .palette-card > .palette-blocks {
+      display: none;
+    }
+
+    body.is-block-moving .palette-delete-zone {
+      display: flex;
+    }
+
+    body.is-block-moving .palette-card.is-delete-target {
+      border-color: #dc2626;
+      background: #fee2e2;
+      box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.35);
+      transform: scale(1.015);
+    }
+
+    body.is-block-moving .palette-card.is-delete-target .palette-delete-zone {
+      border-style: solid;
+      border-color: #dc2626;
+      background: linear-gradient(180deg, #fecaca 0%, #f87171 100%);
+      color: #7f1d1d;
+      animation: none;
+      transform: scale(1.02);
+    }
+
+    @keyframes palette-delete-pulse {
+      0%, 100% { box-shadow: inset 0 0 0 0 rgba(248, 113, 113, 0); }
+      50% { box-shadow: inset 0 0 0 3px rgba(248, 113, 113, 0.35); }
+    }
+
+    .block-drag-ghost.is-delete-ghost {
+      opacity: 0.55;
+      filter: grayscale(0.35) brightness(1.05);
+      outline: 3px solid #ef4444;
+      outline-offset: 2px;
+    }
+
+    .block-drag-ghost.is-delete-ghost::after {
+      content: '🗑 けす';
+      position: absolute;
+      top: -18px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #dc2626;
+      color: #fff;
+      font-size: 0.72rem;
+      font-weight: 900;
+      padding: 3px 8px;
+      border-radius: 999px;
+      white-space: nowrap;
+      box-shadow: 0 4px 10px rgba(185, 28, 28, 0.35);
+      pointer-events: none;
     }
 
     .section-title {
@@ -2175,12 +2261,19 @@
     <!-- 右側：ブロックプログラミング操作画面 -->
     <section class="code-column">
       <!-- ツールパレット -->
-      <div class="palette-card">
+      <div class="palette-card" id="palette-card">
         <div class="section-title">
           <span>🧩 つかえるブロック</span>
-          <span class="hint-small">クリックか ひっぱっておく／ここにもどすと けせる</span>
+          <span class="hint-small">クリックか ひっぱっておく</span>
         </div>
         <div class="palette-blocks" id="palette-blocks"></div>
+        <div class="palette-delete-zone" id="palette-delete-zone" aria-hidden="true">
+          <span class="palette-delete-icon" aria-hidden="true">🗑</span>
+          <span class="palette-delete-text">
+            <span>ここにおくと けせる</span>
+            <span class="palette-delete-sub">はなせば ブロックが きえるよ</span>
+          </span>
+        </div>
       </div>
 
       <!-- プログラム組み立てエリア -->
@@ -2911,7 +3004,8 @@
     const statStepsEl = document.getElementById('stat-steps');
     const statBlocksEl = document.getElementById('stat-blocks');
     const paletteBlocksEl = document.getElementById('palette-blocks');
-    const paletteCardEl = paletteBlocksEl ? paletteBlocksEl.closest('.palette-card') : null;
+    const paletteCardEl = document.getElementById('palette-card')
+      || (paletteBlocksEl ? paletteBlocksEl.closest('.palette-card') : null);
     const workspaceArea = document.getElementById('workspace-area');
     const mainStack = document.getElementById('main-stack');
     const emptyHint = document.getElementById('empty-hint');
@@ -3773,9 +3867,17 @@
       return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
     }
 
+    function setMovingDeleteMode(active) {
+      document.body.classList.toggle('is-block-moving', Boolean(active));
+      if (!active) setPaletteDeleteTarget(false);
+    }
+
     function setPaletteDeleteTarget(active) {
       if (!paletteCardEl) return;
       paletteCardEl.classList.toggle('is-delete-target', Boolean(active));
+      if (dragGhost && dragGhost.el) {
+        dragGhost.el.classList.toggle('is-delete-ghost', Boolean(active));
+      }
     }
 
     function getStackAtPoint(x, y) {
@@ -3866,7 +3968,7 @@
         draggedSource.el.classList.remove('dragging');
       }
       if (dropIndicator.parentNode) dropIndicator.remove();
-      setPaletteDeleteTarget(false);
+      setMovingDeleteMode(false);
       document.body.classList.remove('is-block-dragging');
       pendingPointerDrag = null;
       activePointerDrag = null;
@@ -3897,6 +3999,7 @@
         dragGhost = createDragGhost(pending.previewEl, pending.startX, pending.startY);
         if (draggedSource.mode === 'move' && draggedSource.el) {
           draggedSource.el.classList.add('dragging');
+          setMovingDeleteMode(true);
         }
         try {
           pending.originEl.setPointerCapture(e.pointerId);
