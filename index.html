@@ -3881,7 +3881,11 @@
     }
 
     function getStackAtPoint(x, y) {
-      if (draggedSource && draggedSource.mode === 'move' && isPointOverPalette(x, y)) {
+      if (
+        draggedSource
+        && (draggedSource.mode === 'move' || draggedSource.mode === 'new')
+        && isPointOverPalette(x, y)
+      ) {
         return null;
       }
       const movingEl = draggedSource && draggedSource.mode === 'move' ? draggedSource.el : null;
@@ -3904,7 +3908,9 @@
     }
 
     function updateDropIndicatorAt(x, y) {
-      const overPaletteDelete = draggedSource && draggedSource.mode === 'move' && isPointOverPalette(x, y);
+      const canDeleteOnPalette = draggedSource
+        && (draggedSource.mode === 'move' || draggedSource.mode === 'new');
+      const overPaletteDelete = canDeleteOnPalette && isPointOverPalette(x, y);
       setPaletteDeleteTarget(overPaletteDelete);
       if (overPaletteDelete) {
         if (dropIndicator.parentNode) dropIndicator.remove();
@@ -3999,6 +4005,9 @@
         dragGhost = createDragGhost(pending.previewEl, pending.startX, pending.startY);
         if (draggedSource.mode === 'move' && draggedSource.el) {
           draggedSource.el.classList.add('dragging');
+        }
+        // 作業スペース／パレットどちらからでも、削除ゾーンUIを出す
+        if (draggedSource.mode === 'move' || draggedSource.mode === 'new') {
           setMovingDeleteMode(true);
         }
         try {
@@ -4029,8 +4038,14 @@
         suppressPaletteClick = true;
         setTimeout(() => { suppressPaletteClick = false; }, 400);
       }
-      if (draggedSource && draggedSource.mode === 'move' && isPointOverPalette(e.clientX, e.clientY)) {
-        removeDraggedWorkspaceBlock();
+      const dropOnPalette = draggedSource
+        && (draggedSource.mode === 'move' || draggedSource.mode === 'new')
+        && isPointOverPalette(e.clientX, e.clientY);
+      if (dropOnPalette) {
+        // 作業スペースからの移動は削除、パレットからの新規は配置キャンセル
+        if (draggedSource.mode === 'move') {
+          removeDraggedWorkspaceBlock();
+        }
       } else {
         commitDropAtIndicator();
       }
