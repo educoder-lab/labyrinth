@@ -1,4 +1,4 @@
-# プログラミングでワールドツアー！🌍
+﻿# プログラミングでワールドツアー！🌍
 
 成蹊のマスコット「**けやっきー**」が、スクラッチ風の命令ブロックを組み立てて世界各地・宇宙のゴールを目指すプログラミング迷路ゲームです（全20ステージ）。
 
@@ -10,10 +10,10 @@
 
 | 用途 | URL |
 |------|-----|
-| **児童用ゲーム** | https://yuudai20020929-code.github.io/labyrinth/ |
-| **教師用ダッシュボード** | https://yuudai20020929-code.github.io/labyrinth/teacher.html |
-| **授業スライド（小学3年・投影用）** | https://yuudai20020929-code.github.io/labyrinth/docs/授業スライド-小学3年.html |
-| **研修スライド（小学3年・先生向け）** | https://yuudai20020929-code.github.io/labyrinth/docs/研修スライド-小学3年.html |
+| **児童用ゲーム** | https://educoder-lab.github.io/labyrinth/ |
+| **教師用ダッシュボード** | https://educoder-lab.github.io/labyrinth/teacher.html |
+| **授業スライド（小学3年・投影用）** | https://educoder-lab.github.io/labyrinth/docs/授業スライド-小学3年.html |
+| **研修スライド（小学3年・先生向け）** | https://educoder-lab.github.io/labyrinth/docs/研修スライド-小学3年.html |
 
 ---
 
