@@ -2,7 +2,7 @@
 
 成蹊のマスコット「**けやっきー**」が、スクラッチ風の命令ブロックを組み立てて世界各地・宇宙のゴールを目指すプログラミング迷路ゲームです（全20ステージ）。
 
-小学校の授業向けに、**学年・組・出席番号ログイン**、**Googleスプレッドシートへの進捗保存**、教師用ダッシュボード、授業・研修用スライドを用意しています。
+小学校の授業向けに、**学年・組・出席番号ログイン**、**Supabase への進捗保存**（旧 Google スプレッドシートも互換対応）、教師用ダッシュボード、授業・研修用スライドを用意しています。
 
 ---
 
@@ -59,77 +59,86 @@
 
 ---
 
-## 🏫 授業ログイン（Googleスプレッドシート連携）
+## 🏫 授業ログイン（Supabase）
 
-**学年・組・出席番号**でログインし、クリア進捗をスプレッドシートに保存します。教師はダッシュボードからクラス進捗の確認とテストプレイができます。
+**学年・組・出席番号**でログインし、クリア進捗を Supabase に保存します。教師はダッシュボードからクラス進捗の確認とテストプレイができます。  
+（旧 Google スプレッドシート + GAS も `gasUrl` があれば互換動作します。新規は Supabase 推奨）
 
-### セットアップ
+### セットアップ（約15〜30分）
 
-1. **新しい Google スプレッドシート**を作成する  
-2. 「拡張機能」→「Apps Script」を開き、[`gas/Code.gs`](gas/Code.gs) の内容をすべて貼り付ける  
-3. スクリプトをスプレッドシートに紐付けていれば `SPREADSHEET_ID` は空のままでOK  
-4. 「デプロイ」→「新しいデプロイ」→ 種類「ウェブアプリ」  
-   - 実行するユーザー: **自分**  
-   - アクセスできるユーザー: **全員**（匿名ユーザーを含む）  
-   - ⚠️ **「組織内のみ」だと GitHub Pages から接続できません**（CORS / 401）  
-5. 発行された URL を [`config.js`](config.js) の `gasUrl` に貼る  
-6. （任意）`spreadsheetUrl` にスプレッドシート URL を貼ると、教師画面から `progress` シートを直接開ける  
-7. 初回 API 呼び出しでシート `progress` / `config` が自動作成される  
-8. `config` シートで変更できる項目  
-   - `teacherPassword` … 教師ログイン（初期値 `sensei`）  
-   - `allowedGrades` … 例 `1,2,3,4,5,6`  
-   - `maxStudentNo` … 例 `40`  
-   - `maxClass` … 例 `4`
+1. [Supabase](https://supabase.com/) でプロジェクトを作成する  
+2. **SQL Editor** を開き、[`supabase/schema.sql`](supabase/schema.sql) の内容をすべて貼り付けて **Run**  
+3. **Project Settings → API** で次を控える  
+   - Project URL  
+   - `anon` `public` key  
+4. [`config.js`](config.js) に貼る  
 
-> **GAS を更新したあと**は、必ず「新しいデプロイ」を作り、`config.js` の URL を更新してください。
+```js
+window.LABYRINTH_CONFIG = {
+  supabaseUrl: 'https://xxxx.supabase.co',
+  supabaseAnonKey: 'eyJhbGciOi...',
+  gasUrl: '',
+  spreadsheetUrl: ''
+};
+```
+
+5. 児童用ページでログイン・クリア保存をテストする  
+6. 教師画面（`teacher.html`）でパスワード `sensei`（初期値）でログインできることを確認する  
+
+#### 設定の変更（`app_config` テーブル）
+
+Supabase → Table Editor → `app_config`
+
+| key | 初期値 | 意味 |
+|-----|--------|------|
+| `teacherPassword` | `sensei` | 教師ログイン |
+| `allowedGrades` | `1,2,3,4,5,6` | 使える学年 |
+| `maxStudentNo` | `40` | 出席番号の上限 |
+| `maxClass` | `4` | 組の上限 |
+
+#### 授業前の準備（推奨）
+
+教師ダッシュボードの **「クラス行を用意」** で、選んだ学年・組の 1〜30 番行を一括作成できます。  
+（SQL でも可: `select seed_class_rows(3, 1, 30);`）
 
 ### 使い方
 
 | 役割 | 操作 |
 |------|------|
 | **生徒** | 学年・組（1〜4）・出席番号（1〜40）を選んで「はじめる」。前回のすすみがあるときは「つづきから／はじめから」を選択 |
-| **ゲスト** | 「まずはためす（ほぞんなし）」→ シート保存なし |
+| **ゲスト** | 「まずはためす（ほぞんなし）」→ クラウド保存なし |
 | **教師** | `teacher.html` でパスワード → 学年・組を選んで進捗表 |
-| **テストプレイ** | 教師画面の「ゲームをひらく」→ 進捗はシートに保存されない |
+| **テストプレイ** | 教師画面の「ゲームをひらく」→ 進捗は保存されない |
 
 ### クラス30人前後で使うとき
 
-- ゲーム本体は各端末で動くため軽め。負荷がかかるのは **ログイン・進捗保存（GAS）** です
-- **ログインは一斉にせず**、班ごと（例: 1〜10番 → 11〜20番 → 21〜30番）にずらす
-- 授業前に `progress` シートへ生徒行を用意しておくと、初回ログインが速くなります  
-  - key 形式: `G3-C1-N11`（文字列。日付にならない形式）  
-  - 列: `key`, `grade`, `className`, `studentNo`, …
-- 再読み込み時は端末の保存データを優先してすぐ開始し、裏でクラウドと同期します
+- Supabase は同時ログインに強いので、スプレッドシート時代より安定しやすいです  
+- それでも学校 Wi‑Fi 混雑時は、班ごとにログインをずらすと安心です  
+- 再読み込み時は端末の保存データを優先してすぐ開始し、裏でクラウドと同期します  
 
-> 個人名は扱いません。教師パスワードは授業用の簡易認証です。GAS の URL とパスワードは校外に公開しない運用を想定しています。
+> 個人名は扱いません。教師パスワードは授業用の簡易認証です。`anon` key はフロント公開前提ですが、テーブルは直接触れず RPC 経由のみです。パスワードは校外に広く公開しない運用を想定しています。
 
 ### トラブルシュート
 
 <details>
-<summary>CORS / 401 エラー</summary>
+<summary>ログインできない / supabase_auth_error</summary>
 
-**症状:** `blocked by CORS policy` / `401` / URL が `script.google.com/a/macros/学校ドメイン/...`
-
-**原因:** GAS が「組織内のみ」でデプロイされている
-
-**対処:** 「全員（匿名含む）」で新しいデプロイ → 新しい `/exec` URL を `config.js` に貼る
+- `config.js` の `supabaseUrl` / `supabaseAnonKey` が正しいか確認  
+- `schema.sql` を SQL Editor で実行済みか確認  
+- ブラウザの開発者ツール Network で `/rest/v1/rpc/student_login` の応答を確認  
 </details>
 
 <details>
-<summary>ログインはできるが進捗保存に失敗する</summary>
+<summary>教師パスワードを変えたい</summary>
 
-**対処:** 最新の [`gas/Code.gs`](gas/Code.gs) を反映して **新しいデプロイ** → `config.js` の URL 更新 → クリア後に `progress` の `cleared` を確認
+Table Editor → `app_config` → `teacherPassword` の value を変更
 </details>
 
 <details>
-<summary>key が日付（例: 2003/1/11）になり、同じ生徒の行が二重になる</summary>
+<summary>旧スプレッドシート運用に戻す / 併用</summary>
 
-**原因:** 旧形式 key（例 `3-1-11`）をシートが日付と誤認
-
-**対処:** 最新 `Code.gs` を再デプロイ（key は `G3-C1-N11`）→ 重複行を整理 → A列をプレーンテキストに
+`supabaseUrl` と `supabaseAnonKey` を空にし、`gasUrl` を設定すると従来の GAS 連携で動きます。詳細は [`gas/README.md`](gas/README.md)。
 </details>
-
-学校方針で「全員」が使えない場合は、GitHub Pages ではなく学校ドメイン内（Google Sites 等）にゲームを置く必要があります。
 
 ---
 
@@ -219,9 +228,10 @@
 |------|------|
 | `index.html` | 児童用ゲーム本体 |
 | `teacher.html` | 教師用ダッシュボード |
-| `config.js` | GAS URL・スプレッドシート URL |
+| `config.js` | Supabase URL / anon key（または旧 gasUrl） |
 | `js/classroom-api.js` | ログイン・進捗保存クライアント |
-| `gas/Code.gs` | Google Apps Script API |
+| `supabase/schema.sql` | Supabase テーブル・RPC・RLS |
+| `gas/Code.gs` | （旧）Google Apps Script API |
 | `docs/授業スライド-小学3年.html` | 授業投影用スライド |
 | `docs/研修スライド-小学3年.html` | 先生向け研修スライド |
 

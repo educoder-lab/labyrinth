@@ -5018,9 +5018,11 @@
 
       if (loginHint) {
         if (!ClassroomAPI.isConfigured()) {
-          loginHint.textContent = '※ まだスプレッドシート連携が設定されていません。授業で使うときは config.js の gasUrl を設定してください';
+          loginHint.textContent = '※ まだ進捗のほぞんが設定されていません。授業で使うときは config.js を設定してください';
         } else {
-          loginHint.textContent = '※ すすみは クラスの シートに ほぞんされます';
+          loginHint.textContent = ClassroomAPI.isSupabaseConfigured && ClassroomAPI.isSupabaseConfigured()
+            ? '※ すすみは クラウド（Supabase）に ほぞんされます'
+            : '※ すすみは クラスの シートに ほぞんされます';
         }
       }
 
@@ -5106,13 +5108,15 @@
             const code = err && err.code;
             if (code === 'timeout') {
               loginError.textContent = 'せつぞくが タイムアウトしました。ネットワークを かくにんして もういちど ためしてね';
-            } else if (code === 'gas_stale_deploy') {
-              loginError.textContent = 'GASが 古いままです。Code.gs を再デプロイして config.js の URL を更新してください';
+            } else if (code === 'gas_stale_deploy' || code === 'api_invalid_response') {
+              loginError.textContent = 'サーバー設定を かくにんしてね（Supabase の schema.sql または GAS の再デプロイ）';
+            } else if (code === 'supabase_auth_error') {
+              loginError.textContent = 'Supabase の URL / キーを かくにんしてね';
             } else if (code === 'gas_org_only_cors' || code === 'gas_auth_required') {
               loginError.textContent = 'GASの設定が「組織内のみ」になっています。Apps Script を「全員（匿名含む）」で再デプロイし、新しい URL を config.js に貼ってください';
             } else if (code === 'invalid_grade' || code === 'invalid_class' || code === 'invalid_student_no') {
               loginError.textContent = 'にゅうりょくが ただしくないよ';
-            } else if (err && err.message === 'gas_url_missing') {
+            } else if (err && (err.message === 'gas_url_missing' || err.message === 'supabase_not_configured')) {
               loginError.textContent = '先生の せってい（config.js）が まだだよ';
             } else {
               loginError.textContent = 'せつぞくできなかったよ。もういちど ためしてね';

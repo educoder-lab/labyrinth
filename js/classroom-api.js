@@ -1,5 +1,7 @@
 /**
- * 授業用 Classroom API クライアント（Google Apps Script 経由）
+ * 授業用 Classroom API クライアント
+ * - 優先: Supabase（config.js の supabaseUrl / supabaseAnonKey）
+ * - 互換: Google Apps Script（config.js の gasUrl）※旧運用向け
  */
 (function (global) {
   const SESSION_KEY = 'agy_classroom_session';
@@ -20,12 +22,30 @@
     return global.LABYRINTH_CONFIG || {};
   }
 
+  function getSupabaseUrl() {
+    return String(getConfig().supabaseUrl || '').trim().replace(/\/$/, '');
+  }
+
+  function getSupabaseAnonKey() {
+    return String(getConfig().supabaseAnonKey || '').trim();
+  }
+
   function getGasUrl() {
-    return (getConfig().gasUrl || '').trim();
+    return String(getConfig().gasUrl || '').trim();
+  }
+
+  function isSupabaseConfigured() {
+    return Boolean(getSupabaseUrl() && getSupabaseAnonKey());
   }
 
   function isConfigured() {
-    return Boolean(getGasUrl());
+    return isSupabaseConfigured() || Boolean(getGasUrl());
+  }
+
+  function backendName() {
+    if (isSupabaseConfigured()) return 'supabase';
+    if (getGasUrl()) return 'gas';
+    return 'none';
   }
 
   function makeSessionKey(grade, className, studentNo) {
@@ -36,29 +56,17 @@
     if (action === 'studentLogin') {
       if (!data.progress || !data.progress.key) {
         const err = new Error('invalid_student_login_response');
-        err.code = 'gas_stale_deploy';
+        err.code = 'api_invalid_response';
         throw err;
       }
     }
     if (action === 'saveProgress') {
       if (!data.progress || !data.progress.key) {
         const err = new Error('invalid_save_response');
-        err.code = 'gas_stale_deploy';
+        err.code = 'api_invalid_response';
         throw err;
       }
     }
-  }
-
-  function buildGetUrl(baseUrl, payload) {
-    const params = new URLSearchParams();
-    Object.keys(payload).forEach((key) => {
-      const val = payload[key];
-      if (val !== undefined && val !== null && val !== '') {
-        params.set(key, String(val));
-      }
-    });
-    const sep = baseUrl.includes('?') ? '&' : '?';
-    return baseUrl + sep + params.toString();
   }
 
   function parseApiResponse(text) {
@@ -82,18 +90,11 @@
     }
   }
 
-  async function fetchGas(method, url, bodyText) {
-    const isOrgGasUrl = /\/a\/macros\//.test(url);
+  async function fetchWithTimeout(url, options) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    const options = { method, redirect: 'follow', signal: controller.signal };
-    if (method === 'POST') {
-      options.headers = { 'Content-Type': 'text/plain' };
-      options.body = bodyText;
-    }
-    let res;
     try {
-      res = await fetch(url, options);
+      return await fetch(url, Object.assign({}, options, { signal: controller.signal }));
     } catch (err) {
       if (err && err.name === 'AbortError') {
         const timeoutErr = new Error('timeout');
@@ -104,6 +105,57 @@
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  async function callSupabaseRpc(fnName, args) {
+    const baseUrl = getSupabaseUrl();
+    const anonKey = getSupabaseAnonKey();
+    const url = baseUrl + '/rest/v1/rpc/' + fnName;
+    const res = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        Authorization: 'Bearer ' + anonKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(args || {})
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      const err = new Error('http_' + res.status);
+      err.code = res.status === 401 || res.status === 403 ? 'supabase_auth_error' : 'http_' + res.status;
+      err.detail = text.slice(0, 200);
+      throw err;
+    }
+    const data = parseApiResponse(text);
+    if (!data || data.ok === false) {
+      const err = new Error((data && data.error) || 'api_error');
+      err.code = data && data.error;
+      throw err;
+    }
+    return data;
+  }
+
+  function buildGetUrl(baseUrl, payload) {
+    const params = new URLSearchParams();
+    Object.keys(payload).forEach((key) => {
+      const val = payload[key];
+      if (val !== undefined && val !== null && val !== '') {
+        params.set(key, String(val));
+      }
+    });
+    const sep = baseUrl.includes('?') ? '&' : '?';
+    return baseUrl + sep + params.toString();
+  }
+
+  async function fetchGas(method, url, bodyText) {
+    const isOrgGasUrl = /\/a\/macros\//.test(url);
+    const options = { method, redirect: 'follow' };
+    if (method === 'POST') {
+      options.headers = { 'Content-Type': 'text/plain' };
+      options.body = bodyText;
+    }
+    const res = await fetchWithTimeout(url, options);
     const text = await res.text();
     if (!res.ok) {
       const err = new Error('http_' + res.status);
@@ -122,11 +174,9 @@
     return data;
   }
 
-  async function callApi(payload) {
+  async function callGasApi(payload) {
     const baseUrl = getGasUrl();
-    if (!baseUrl) {
-      throw new Error('gas_url_missing');
-    }
+    if (!baseUrl) throw new Error('gas_url_missing');
     const isOrgGasUrl = /\/a\/macros\//.test(baseUrl);
     const action = payload.action;
 
@@ -157,6 +207,46 @@
       }
       throw err;
     }
+  }
+
+  async function callBackend(action, payload) {
+    if (isSupabaseConfigured()) {
+      let data;
+      if (action === 'studentLogin') {
+        data = await callSupabaseRpc('student_login', {
+          p_grade: Number(payload.grade),
+          p_class_name: Number(payload.className),
+          p_student_no: Number(payload.studentNo)
+        });
+      } else if (action === 'saveProgress') {
+        data = await callSupabaseRpc('save_progress', {
+          p_grade: Number(payload.grade),
+          p_class_name: Number(payload.className),
+          p_student_no: Number(payload.studentNo),
+          p_cleared: payload.cleared || '',
+          p_perfect: payload.perfect || '',
+          p_master_cleared: payload.masterCleared || '',
+          p_master_perfect: payload.masterPerfect || '',
+          p_medals: payload.medals || '',
+          p_reset: payload.reset === true || payload.reset === 'true' || payload.reset === '1'
+        });
+      } else if (action === 'teacherLogin') {
+        data = await callSupabaseRpc('teacher_login', {
+          p_password: String(payload.password || '')
+        });
+      } else if (action === 'getClassProgress') {
+        data = await callSupabaseRpc('get_class_progress', {
+          p_token: String(payload.token || ''),
+          p_grade: Number(payload.grade),
+          p_class_name: Number(payload.className)
+        });
+      } else {
+        throw new Error('unknown_action');
+      }
+      validateApiData(action, data);
+      return data;
+    }
+    return callGasApi(Object.assign({ action }, payload));
   }
 
   function csvToIndexMap(csv) {
@@ -302,11 +392,9 @@
       if (cached) return cached;
     }
 
-    const data = await callApi({
-      action: 'studentLogin',
+    const data = await callBackend('studentLogin', {
       grade: Number(grade),
       className: Number(className),
-      classNo: Number(className),
       studentNo: Number(studentNo)
     });
     const result = buildLoginResult(data, grade, className, studentNo);
@@ -335,14 +423,16 @@
       return null;
     }
 
-    const data = await callApi({
-      action: 'saveProgress',
+    const data = await callBackend('saveProgress', {
       grade: session.grade,
       className: session.className,
-      classNo: session.className,
       studentNo: session.studentNo,
-      ...payload,
-      ...(reset ? { reset: 'true' } : {})
+      cleared: payload.cleared,
+      perfect: payload.perfect,
+      masterCleared: payload.masterCleared,
+      masterPerfect: payload.masterPerfect,
+      medals: payload.medals,
+      reset: reset ? 'true' : undefined
     });
     lastSavedHash = hash;
     return progressFromSheet(data.progress);
@@ -408,8 +498,7 @@
   }
 
   async function teacherLogin(password) {
-    const data = await callApi({
-      action: 'teacherLogin',
+    const data = await callBackend('teacherLogin', {
       password: String(password || '')
     });
     setTeacherToken(data.token);
@@ -419,8 +508,7 @@
   async function getClassProgress(grade, className) {
     const token = getTeacherToken();
     if (!token) throw new Error('unauthorized');
-    const data = await callApi({
-      action: 'getClassProgress',
+    const data = await callBackend('getClassProgress', {
       token,
       grade: Number(grade),
       className: Number(className)
@@ -435,15 +523,31 @@
     };
   }
 
+  /** 任意: 授業前にクラス分の空行を作成（Supabase のみ） */
+  async function seedClassRows(grade, className, maxStudent) {
+    if (!isSupabaseConfigured()) {
+      throw new Error('supabase_only');
+    }
+    return callSupabaseRpc('seed_class_rows', {
+      p_grade: Number(grade),
+      p_class_name: Number(className),
+      p_max_student: Number(maxStudent || 30)
+    });
+  }
+
   global.ClassroomAPI = {
     isConfigured,
+    isSupabaseConfigured,
+    backendName,
     getGasUrl,
+    getSupabaseUrl,
     makeSessionKey,
     studentLogin,
     saveProgress,
     flushSaveProgress,
     teacherLogin,
     getClassProgress,
+    seedClassRows,
     getStudentSession,
     setStudentSession,
     clearStudentSession,
