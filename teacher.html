@@ -210,6 +210,25 @@
       font-size: 0.85rem;
       margin-bottom: 14px;
     }
+    .btn-danger {
+      background: #dc2626;
+      box-shadow: 0 3px 0 #991b1b;
+    }
+    .btn-row-delete {
+      height: 28px;
+      padding: 0 8px;
+      font-size: 0.72rem;
+      border: none;
+      border-radius: 8px;
+      background: #fee2e2;
+      color: #b91c1c;
+      font-family: inherit;
+      font-weight: 900;
+      cursor: pointer;
+    }
+    .btn-row-delete:hover {
+      background: #fecaca;
+    }
   </style>
 </head>
 <body>
@@ -267,6 +286,7 @@
         <div class="actions">
           <button type="button" class="btn" id="btn-reload">再読み込み</button>
           <button type="button" class="btn btn-secondary" id="btn-seed-class" title="授業前に空の進捗行をまとめて作成">クラス行を用意</button>
+          <button type="button" class="btn btn-danger" id="btn-delete-class" title="表示中の学年・組の進捗をすべて削除">クラスデータ削除</button>
           <a class="btn btn-secondary" id="btn-test-play" href="index.html?mode=teacher" target="_blank" rel="noopener">ゲームをひらく（テストプレイ）</a>
         </div>
       </div>
@@ -342,6 +362,9 @@
       const thUpdated = document.createElement('th');
       thUpdated.textContent = '更新';
       headRow.appendChild(thUpdated);
+      const thAction = document.createElement('th');
+      thAction.textContent = '操作';
+      headRow.appendChild(thAction);
 
       body.innerHTML = '';
       if (!students.length) {
@@ -370,8 +393,24 @@
           .filter(Boolean).length;
         const updated = s.updatedAt ? new Date(s.updatedAt).toLocaleString('ja-JP') : '-';
         html += `<td>${medalCount}</td><td class="meta">${updated}</td>`;
+        html += `<td><button type="button" class="btn-row-delete" data-student-no="${s.studentNo}">削除</button></td>`;
         tr.innerHTML = html;
         body.appendChild(tr);
+      });
+
+      body.querySelectorAll('.btn-row-delete').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const studentNo = Number(btn.getAttribute('data-student-no'));
+          if (!confirm(`${grade}年${className}組 ${studentNo}番 のデータを削除しますか？`)) return;
+          btn.disabled = true;
+          try {
+            await ClassroomAPI.deleteStudentProgress(grade, className, studentNo);
+            await reloadProgress();
+          } catch (err) {
+            alert('削除に失敗しました。再ログインしてから試してください');
+            btn.disabled = false;
+          }
+        });
       });
 
       dashMeta.textContent = `${grade}年${className}組 / ${students.length}人（スタンダードコース表示）`;
@@ -450,6 +489,26 @@
           alert('作成に失敗しました。接続を確認してください');
         } finally {
           btnSeedClass.disabled = false;
+        }
+      });
+    }
+
+    const btnDeleteClass = document.getElementById('btn-delete-class');
+    if (btnDeleteClass) {
+      btnDeleteClass.addEventListener('click', async () => {
+        const grade = document.getElementById('dash-grade').value;
+        const className = document.getElementById('dash-class').value;
+        if (!confirm(`${grade}年${className}組の進捗データをすべて削除しますか？\nこの操作は取り消せません。`)) return;
+        if (!confirm('本当に削除しますか？')) return;
+        btnDeleteClass.disabled = true;
+        try {
+          const result = await ClassroomAPI.deleteClassProgress(grade, className);
+          await reloadProgress();
+          alert(`削除しました（${result.deleted || 0}件）`);
+        } catch (err) {
+          alert('削除に失敗しました。再ログインしてから試してください');
+        } finally {
+          btnDeleteClass.disabled = false;
         }
       });
     }

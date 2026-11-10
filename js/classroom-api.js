@@ -151,6 +151,19 @@
         p_grade: Number(payload.grade),
         p_class_name: Number(payload.className)
       });
+    } else if (action === 'deleteStudentProgress') {
+      data = await callSupabaseRpc('delete_student_progress', {
+        p_token: String(payload.token || ''),
+        p_grade: Number(payload.grade),
+        p_class_name: Number(payload.className),
+        p_student_no: Number(payload.studentNo)
+      });
+    } else if (action === 'deleteClassProgress') {
+      data = await callSupabaseRpc('delete_class_progress', {
+        p_token: String(payload.token || ''),
+        p_grade: Number(payload.grade),
+        p_class_name: Number(payload.className)
+      });
     } else {
       throw new Error('unknown_action');
     }
@@ -425,6 +438,27 @@
     });
   }
 
+  async function deleteStudentProgress(grade, className, studentNo) {
+    const token = getTeacherToken();
+    if (!token) throw new Error('unauthorized');
+    return callBackend('deleteStudentProgress', {
+      token,
+      grade: Number(grade),
+      className: Number(className),
+      studentNo: Number(studentNo)
+    });
+  }
+
+  async function deleteClassProgress(grade, className) {
+    const token = getTeacherToken();
+    if (!token) throw new Error('unauthorized');
+    return callBackend('deleteClassProgress', {
+      token,
+      grade: Number(grade),
+      className: Number(className)
+    });
+  }
+
   global.ClassroomAPI = {
     isConfigured,
     isSupabaseConfigured,
@@ -437,6 +471,8 @@
     teacherLogin,
     getClassProgress,
     seedClassRows,
+    deleteStudentProgress,
+    deleteClassProgress,
     getStudentSession,
     setStudentSession,
     clearStudentSession,
