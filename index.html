@@ -1310,6 +1310,20 @@
       z-index: 30;
     }
 
+    .ws-block.error-block,
+    .c-block.error-block > .c-header {
+      filter: brightness(1.05) saturate(1.2) !important;
+      outline: 3px solid #ef4444 !important;
+      outline-offset: 2px;
+      z-index: 35;
+      animation: error-block-pulse 0.9s ease-in-out 2;
+    }
+
+    @keyframes error-block-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
+      50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.18); }
+    }
+
     .block-drag-handle {
       cursor: grab;
       opacity: 0.7;
@@ -4360,6 +4374,46 @@
       }
     }
 
+    function clearBlockHighlights() {
+      document.querySelectorAll('.ws-block, .c-block').forEach((b) => {
+        b.classList.remove('executing', 'error-block');
+      });
+    }
+
+    function getBlockLabel(type) {
+      if (type === 'forward') return '1マス すすむ';
+      if (type === 'turn_right') return 'みぎを むく';
+      if (type === 'turn_left') return 'ひだりを むく';
+      if (type === 'repeat') return 'くりかえす';
+      if (type === 'if') return 'もし';
+      if (type === 'while') return 'ゴールするまで';
+      return 'ブロック';
+    }
+
+    /** プログラム内での位置（うえから何番めか） */
+    function getBlockOrdinal(el) {
+      if (!el) return 0;
+      const all = Array.from(mainStack.querySelectorAll('.ws-block, .c-block'));
+      const idx = all.indexOf(el);
+      return idx >= 0 ? idx + 1 : 0;
+    }
+
+    function markErrorBlock(el) {
+      clearBlockHighlights();
+      if (!el) return;
+      el.classList.add('error-block');
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function makeBlockError(el, type, reason) {
+      const label = getBlockLabel(type);
+      const ordinal = getBlockOrdinal(el);
+      const where = ordinal > 0 ? `（うえから${ordinal}ばんめ）` : '';
+      const err = new Error(`「${label}」${where}で ${reason}！ このブロックを なおしてみよう`);
+      err.blockEl = el;
+      return err;
+    }
+
     async function checkCondition(condType) {
       const stage = STAGES[currentStageIndex];
       const dx = [0, 1, 0, -1][robotPos.dir];
@@ -4421,7 +4475,9 @@
 
         if (node.type === 'forward') {
           const res = await executeMove(speed);
-          if (!res.success) throw new Error(res.message);
+          if (!res.success) {
+            throw makeBlockError(node.el, node.type, res.reason || res.message);
+          }
           await sleep(Math.max(60, speed * 0.15));
         } else if (node.type === 'turn_right') {
           robotPos.dir = (robotPos.dir + 1) % 4;
@@ -4472,6 +4528,7 @@
       shouldStop = false;
       btnRun.disabled = true;
       totalExecutionSteps = 0;
+      clearBlockHighlights();
       setStatus('🏃 けやっきーが うごいているよ...', 'running');
 
       resetRobot();
@@ -4479,11 +4536,13 @@
 
       const speed = parseInt(speedSelect.value, 10);
       let errorMsg = null;
+      let errorBlockEl = null;
 
       try {
         await executeNodes(ast, speed);
       } catch (err) {
         errorMsg = err.message;
+        errorBlockEl = err.blockEl || null;
       }
 
       document.querySelectorAll('.ws-block, .c-block').forEach(b => b.classList.remove('executing'));
@@ -4491,13 +4550,16 @@
       isRunning = false;
 
       if (shouldStop) {
+        clearBlockHighlights();
         setStatus('⏹️ うごくのを とめたよ。');
         return;
       }
 
       if (errorMsg) {
+        if (errorBlockEl) markErrorBlock(errorBlockEl);
         setStatus(`💥 ${errorMsg}`, 'error');
       } else {
+        clearBlockHighlights();
         checkGoalCondition();
       }
     }
@@ -4512,13 +4574,13 @@
       if (nextX < 0 || nextX >= stage.gridWidth || nextY < 0 || nextY >= stage.gridHeight) {
         Sound.bump();
         await Maze2D.bumpAnimation();
-        return { success: false, message: 'めいろの そとに でちゃった！' };
+        return { success: false, reason: 'めいろの そとに でちゃった', message: 'めいろの そとに でちゃった！' };
       }
 
       if (stage.map[nextY][nextX] === 1) {
         Sound.bump();
         await Maze2D.bumpAnimation();
-        return { success: false, message: 'カベ（🧱）に ぶつかっちゃった！' };
+        return { success: false, reason: 'カベ（🧱）に ぶつかった', message: 'カベ（🧱）に ぶつかっちゃった！' };
       }
 
       robotPos.x = nextX;
@@ -4829,6 +4891,7 @@
       shouldStop = true;
       // 指定（固定）ブロックがあるステージは、プログラムも最初の状態に戻す
       restoreInitialWorkspaceBlocks();
+      clearBlockHighlights();
       resetRobot();
       setStatus('⏹️ 最初にもどしたよ！もう一度ためしてみよう。');
     });
