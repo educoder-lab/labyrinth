@@ -1963,8 +1963,32 @@
     }
 
     .login-form-panel.hidden,
-    .login-progress-choice.hidden {
+    .login-progress-choice.hidden,
+    .login-stage-choice.hidden {
       display: none;
+    }
+
+    .login-stage-choice .login-field {
+      margin-bottom: 14px;
+      text-align: left;
+    }
+
+    .login-stage-choice select {
+      width: 100%;
+      height: 44px;
+      border: 2px solid #cbd5e1;
+      border-radius: 10px;
+      padding: 0 12px;
+      font-family: inherit;
+      font-weight: 800;
+      font-size: 0.95rem;
+      background: #fff;
+    }
+
+    .login-stage-choice select:focus {
+      outline: none;
+      border-color: #0284c7;
+      box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.18);
     }
 
     .login-progress-title {
@@ -2176,6 +2200,18 @@
         <div class="login-progress-actions">
           <button type="button" class="btn-login" id="btn-login-continue">つづきから</button>
           <button type="button" class="btn-login btn-login-fresh" id="btn-login-fresh">はじめから</button>
+        </div>
+      </div>
+      <div class="login-stage-choice hidden" id="login-stage-choice">
+        <p class="login-progress-title">どのステージから つづける？</p>
+        <p class="login-progress-summary" id="login-stage-summary">すきなステージを えらんでね</p>
+        <div class="login-field">
+          <label for="login-stage-select">ステージ</label>
+          <select id="login-stage-select"></select>
+        </div>
+        <div class="login-progress-actions">
+          <button type="button" class="btn-login" id="btn-login-stage-start">このステージで はじめる！</button>
+          <button type="button" class="btn-login btn-login-fresh" id="btn-login-stage-back">もどる</button>
         </div>
       </div>
       <p class="login-error" id="login-error"></p>
@@ -3157,6 +3193,7 @@
       pendingLoginResult = result;
       const formPanel = document.getElementById('login-form-panel');
       const choicePanel = document.getElementById('login-progress-choice');
+      const stagePanel = document.getElementById('login-stage-choice');
       const summary = document.getElementById('login-progress-summary');
       const title = document.getElementById('login-progress-title');
       const loginError = document.getElementById('login-error');
@@ -3165,15 +3202,67 @@
       if (summary) summary.textContent = summaryText || 'つづきから または はじめから えらんでね';
       if (loginError) loginError.textContent = '';
       if (formPanel) formPanel.classList.add('hidden');
+      if (stagePanel) stagePanel.classList.add('hidden');
       if (choicePanel) choicePanel.classList.remove('hidden');
+    }
+
+    function suggestContinueStageIndex(progress) {
+      const cleared = (progress && progress.standard && progress.standard.cleared) || {};
+      for (let i = 0; i < STAGES.length; i++) {
+        if (!cleared[i]) return i;
+      }
+      return STAGES.length - 1;
+    }
+
+    function populateLoginStageSelect(progress) {
+      const select = document.getElementById('login-stage-select');
+      const summary = document.getElementById('login-stage-summary');
+      if (!select) return 0;
+      const cleared = (progress && progress.standard && progress.standard.cleared) || {};
+      const perfect = (progress && progress.standard && progress.standard.perfect) || {};
+      const suggested = suggestContinueStageIndex(progress);
+      select.innerHTML = '';
+      STAGES.forEach((stage, idx) => {
+        const opt = document.createElement('option');
+        opt.value = String(idx);
+        let prefix = '';
+        if (perfect[idx]) prefix = '👑 ';
+        else if (cleared[idx]) prefix = '✅ ';
+        opt.textContent = `${prefix}${stage.title}`;
+        select.appendChild(opt);
+      });
+      select.value = String(suggested);
+      if (summary) {
+        const stage = STAGES[suggested];
+        summary.textContent = cleared[suggested]
+          ? `おすすめ: ${stage.title}（もういちど あそべるよ）`
+          : `おすすめ: ${stage.title}（つぎに すすもう）`;
+      }
+      return suggested;
+    }
+
+    function showLoginStageChoice(result) {
+      pendingLoginResult = result;
+      const formPanel = document.getElementById('login-form-panel');
+      const choicePanel = document.getElementById('login-progress-choice');
+      const stagePanel = document.getElementById('login-stage-choice');
+      const loginError = document.getElementById('login-error');
+      const progress = getMergedProgressForLogin(result);
+      populateLoginStageSelect(progress);
+      if (loginError) loginError.textContent = '';
+      if (formPanel) formPanel.classList.add('hidden');
+      if (choicePanel) choicePanel.classList.add('hidden');
+      if (stagePanel) stagePanel.classList.remove('hidden');
     }
 
     function hideLoginProgressChoice() {
       pendingLoginResult = null;
       const formPanel = document.getElementById('login-form-panel');
       const choicePanel = document.getElementById('login-progress-choice');
+      const stagePanel = document.getElementById('login-stage-choice');
       if (formPanel) formPanel.classList.remove('hidden');
       if (choicePanel) choicePanel.classList.add('hidden');
+      if (stagePanel) stagePanel.classList.add('hidden');
     }
 
     function applyRemoteProgress(remote) {
@@ -3183,7 +3272,7 @@
       isMasterUnlocked = Boolean(stdCleared[STAGES.length - 1]);
     }
 
-    async function completeStudentSession(result, mode) {
+    async function completeStudentSession(result, mode, startStageIndex) {
       const sessionKey = result.session.key;
       if (mode === 'fresh') {
         gameProgress = emptyGameProgress();
@@ -3199,11 +3288,14 @@
         const stdCleared = gameProgress.standard.cleared || {};
         isMasterUnlocked = isMasterUnlocked || Boolean(stdCleared[STAGES.length - 1]);
       }
+      const stageIndex = Number.isInteger(startStageIndex)
+        ? Math.max(0, Math.min(STAGES.length - 1, startStageIndex))
+        : (mode === 'fresh' ? 0 : suggestContinueStageIndex(gameProgress));
       hideLoginProgressChoice();
       classroomReady = true;
       updateSessionChrome();
       unlockAppShell();
-      bootstrapGame();
+      bootstrapGame(stageIndex);
       saveProgressData(mode === 'fresh' ? { reset: true } : undefined);
     }
 
@@ -3370,11 +3462,12 @@
       bootstrapGame();
     }
 
-    function bootstrapGame() {
+    function bootstrapGame(startStageIndex = 0) {
+      const stageIndex = Math.max(0, Math.min(STAGES.length - 1, Number(startStageIndex) || 0));
       updateCourseUI();
       updateMedalsUI();
       initStageSelectOptions();
-      loadStage(0, false);
+      loadStage(stageIndex, true);
       if (countTotalBlocks() === 0) {
         addBlock('forward');
       }
@@ -5101,11 +5194,15 @@
 
       async function handleProgressChoice(mode) {
         if (!pendingLoginResult) return;
+        if (mode === 'continue') {
+          showLoginStageChoice(pendingLoginResult);
+          return;
+        }
         const buttons = [btnLoginContinue, btnLoginFresh].filter(Boolean);
         buttons.forEach((btn) => { btn.disabled = true; });
         if (loginError) loginError.textContent = 'じゅんび中…';
         try {
-          await completeStudentSession(pendingLoginResult, mode);
+          await completeStudentSession(pendingLoginResult, mode, 0);
         } catch (err) {
           if (loginError) loginError.textContent = 'せつぞくできなかったよ。もういちど ためしてね';
           buttons.forEach((btn) => { btn.disabled = false; });
@@ -5117,6 +5214,37 @@
       }
       if (btnLoginFresh) {
         btnLoginFresh.addEventListener('click', () => handleProgressChoice('fresh'));
+      }
+
+      const btnLoginStageStart = document.getElementById('btn-login-stage-start');
+      const btnLoginStageBack = document.getElementById('btn-login-stage-back');
+      const loginStageSelect = document.getElementById('login-stage-select');
+
+      if (btnLoginStageBack) {
+        btnLoginStageBack.addEventListener('click', () => {
+          if (!pendingLoginResult) return;
+          showLoginProgressChoice(pendingLoginResult);
+        });
+      }
+
+      if (btnLoginStageStart) {
+        btnLoginStageStart.addEventListener('click', async () => {
+          if (!pendingLoginResult) return;
+          const stageIndex = Number(loginStageSelect && loginStageSelect.value);
+          const buttons = [btnLoginStageStart, btnLoginStageBack].filter(Boolean);
+          buttons.forEach((btn) => { btn.disabled = true; });
+          if (loginError) loginError.textContent = 'じゅんび中…';
+          try {
+            await completeStudentSession(
+              pendingLoginResult,
+              'continue',
+              Number.isInteger(stageIndex) ? stageIndex : 0
+            );
+          } catch (err) {
+            if (loginError) loginError.textContent = 'せつぞくできなかったよ。もういちど ためしてね';
+            buttons.forEach((btn) => { btn.disabled = false; });
+          }
+        });
       }
 
       const existing = ClassroomAPI.getStudentSession();
