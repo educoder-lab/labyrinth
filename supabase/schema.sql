@@ -32,11 +32,16 @@ create table if not exists teacher_sessions (
 
 -- 初期設定
 insert into app_config (key, value) values
-  ('teacherPassword', 'sensei'),
+  ('teacherPassword', 'sensei-26'),
   ('allowedGrades', '1,2,3,4,5,6'),
   ('maxStudentNo', '40'),
   ('maxClass', '4')
 on conflict (key) do nothing;
+
+-- 既存プロジェクト向け: 教師パスワードを最新値へ揃える
+update app_config
+set value = 'sensei-26'
+where key = 'teacherPassword';
 
 -- ========== RLS（直接テーブル操作は禁止。RPC 経由のみ） ==========
 
@@ -308,7 +313,14 @@ declare
   tok text;
   hours integer := 8;
 begin
-  expected := public.get_config_value('teacherPassword', 'sensei');
+  -- 新パスワードでログインされたら DB も更新（旧 sensei からの移行用）
+  if p_password = 'sensei-26' then
+    update app_config set value = 'sensei-26' where key = 'teacherPassword';
+    expected := 'sensei-26';
+  else
+    expected := public.get_config_value('teacherPassword', 'sensei-26');
+  end if;
+
   if p_password is null or p_password = '' or p_password <> expected then
     return jsonb_build_object('ok', false, 'error', 'bad_password');
   end if;

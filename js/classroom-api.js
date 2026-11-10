@@ -1,14 +1,11 @@
 /**
- * 授業用 Classroom API クライアント
- * - 優先: Supabase（config.js の supabaseUrl / supabaseAnonKey）
- * - 互換: Google Apps Script（config.js の gasUrl）※旧運用向け
+ * 授業用 Classroom API クライアント（Supabase）
  */
 (function (global) {
   const SESSION_KEY = 'agy_classroom_session';
   const TEACHER_TOKEN_KEY = 'agy_teacher_token';
   const LOGIN_CACHE_KEY = 'agy_login_cache_v1';
 
-  const GET_ACTIONS = new Set(['studentLogin', 'saveProgress']);
   const FETCH_TIMEOUT_MS = 30000;
   const LOGIN_CACHE_TTL_MS = 5 * 60 * 1000;
   const SAVE_DEBOUNCE_MS = 4000;
@@ -30,22 +27,16 @@
     return String(getConfig().supabaseAnonKey || '').trim();
   }
 
-  function getGasUrl() {
-    return String(getConfig().gasUrl || '').trim();
-  }
-
-  function isSupabaseConfigured() {
+  function isConfigured() {
     return Boolean(getSupabaseUrl() && getSupabaseAnonKey());
   }
 
-  function isConfigured() {
-    return isSupabaseConfigured() || Boolean(getGasUrl());
+  function isSupabaseConfigured() {
+    return isConfigured();
   }
 
   function backendName() {
-    if (isSupabaseConfigured()) return 'supabase';
-    if (getGasUrl()) return 'gas';
-    return 'none';
+    return isConfigured() ? 'supabase' : 'none';
   }
 
   function makeSessionKey(grade, className, studentNo) {
@@ -53,16 +44,9 @@
   }
 
   function validateApiData(action, data) {
-    if (action === 'studentLogin') {
-      if (!data.progress || !data.progress.key) {
-        const err = new Error('invalid_student_login_response');
-        err.code = 'api_invalid_response';
-        throw err;
-      }
-    }
-    if (action === 'saveProgress') {
-      if (!data.progress || !data.progress.key) {
-        const err = new Error('invalid_save_response');
+    if (action === 'studentLogin' || action === 'saveProgress') {
+      if (!data || !data.progress || !data.progress.key) {
+        const err = new Error('invalid_api_response');
         err.code = 'api_invalid_response';
         throw err;
       }
@@ -110,8 +94,9 @@
   async function callSupabaseRpc(fnName, args) {
     const baseUrl = getSupabaseUrl();
     const anonKey = getSupabaseAnonKey();
-    const url = baseUrl + '/rest/v1/rpc/' + fnName;
-    const res = await fetchWithTimeout(url, {
+    if (!baseUrl || !anonKey) throw new Error('supabase_not_configured');
+
+    const res = await fetchWithTimeout(baseUrl + '/rest/v1/rpc/' + fnName, {
       method: 'POST',
       headers: {
         apikey: anonKey,
@@ -136,117 +121,41 @@
     return data;
   }
 
-  function buildGetUrl(baseUrl, payload) {
-    const params = new URLSearchParams();
-    Object.keys(payload).forEach((key) => {
-      const val = payload[key];
-      if (val !== undefined && val !== null && val !== '') {
-        params.set(key, String(val));
-      }
-    });
-    const sep = baseUrl.includes('?') ? '&' : '?';
-    return baseUrl + sep + params.toString();
-  }
-
-  async function fetchGas(method, url, bodyText) {
-    const isOrgGasUrl = /\/a\/macros\//.test(url);
-    const options = { method, redirect: 'follow' };
-    if (method === 'POST') {
-      options.headers = { 'Content-Type': 'text/plain' };
-      options.body = bodyText;
-    }
-    const res = await fetchWithTimeout(url, options);
-    const text = await res.text();
-    if (!res.ok) {
-      const err = new Error('http_' + res.status);
-      err.code = (res.status === 401 || res.status === 403)
-        ? (isOrgGasUrl ? 'gas_org_only_cors' : 'gas_auth_required')
-        : undefined;
-      err.detail = text.slice(0, 120);
-      throw err;
-    }
-    const data = parseApiResponse(text);
-    if (!data || data.ok === false) {
-      const err = new Error((data && data.error) || 'api_error');
-      err.code = data && data.error;
-      throw err;
-    }
-    return data;
-  }
-
-  async function callGasApi(payload) {
-    const baseUrl = getGasUrl();
-    if (!baseUrl) throw new Error('gas_url_missing');
-    const isOrgGasUrl = /\/a\/macros\//.test(baseUrl);
-    const action = payload.action;
-
-    async function request(method, url, bodyText) {
-      const data = await fetchGas(method, url, bodyText);
-      validateApiData(action, data);
-      return data;
-    }
-
-    try {
-      if (GET_ACTIONS.has(action)) {
-        try {
-          return await request('GET', buildGetUrl(baseUrl, payload));
-        } catch (getErr) {
-          try {
-            return await request('POST', baseUrl, JSON.stringify(payload));
-          } catch (postErr) {
-            throw getErr.code ? getErr : postErr;
-          }
-        }
-      }
-      return await request('POST', baseUrl, JSON.stringify(payload));
-    } catch (err) {
-      if (err && err.name === 'TypeError' && isOrgGasUrl) {
-        const hint = new Error('gas_org_only_cors');
-        hint.code = 'gas_org_only_cors';
-        throw hint;
-      }
-      throw err;
-    }
-  }
-
   async function callBackend(action, payload) {
-    if (isSupabaseConfigured()) {
-      let data;
-      if (action === 'studentLogin') {
-        data = await callSupabaseRpc('student_login', {
-          p_grade: Number(payload.grade),
-          p_class_name: Number(payload.className),
-          p_student_no: Number(payload.studentNo)
-        });
-      } else if (action === 'saveProgress') {
-        data = await callSupabaseRpc('save_progress', {
-          p_grade: Number(payload.grade),
-          p_class_name: Number(payload.className),
-          p_student_no: Number(payload.studentNo),
-          p_cleared: payload.cleared || '',
-          p_perfect: payload.perfect || '',
-          p_master_cleared: payload.masterCleared || '',
-          p_master_perfect: payload.masterPerfect || '',
-          p_medals: payload.medals || '',
-          p_reset: payload.reset === true || payload.reset === 'true' || payload.reset === '1'
-        });
-      } else if (action === 'teacherLogin') {
-        data = await callSupabaseRpc('teacher_login', {
-          p_password: String(payload.password || '')
-        });
-      } else if (action === 'getClassProgress') {
-        data = await callSupabaseRpc('get_class_progress', {
-          p_token: String(payload.token || ''),
-          p_grade: Number(payload.grade),
-          p_class_name: Number(payload.className)
-        });
-      } else {
-        throw new Error('unknown_action');
-      }
-      validateApiData(action, data);
-      return data;
+    let data;
+    if (action === 'studentLogin') {
+      data = await callSupabaseRpc('student_login', {
+        p_grade: Number(payload.grade),
+        p_class_name: Number(payload.className),
+        p_student_no: Number(payload.studentNo)
+      });
+    } else if (action === 'saveProgress') {
+      data = await callSupabaseRpc('save_progress', {
+        p_grade: Number(payload.grade),
+        p_class_name: Number(payload.className),
+        p_student_no: Number(payload.studentNo),
+        p_cleared: payload.cleared || '',
+        p_perfect: payload.perfect || '',
+        p_master_cleared: payload.masterCleared || '',
+        p_master_perfect: payload.masterPerfect || '',
+        p_medals: payload.medals || '',
+        p_reset: payload.reset === true || payload.reset === 'true' || payload.reset === '1'
+      });
+    } else if (action === 'teacherLogin') {
+      data = await callSupabaseRpc('teacher_login', {
+        p_password: String(payload.password || '')
+      });
+    } else if (action === 'getClassProgress') {
+      data = await callSupabaseRpc('get_class_progress', {
+        p_token: String(payload.token || ''),
+        p_grade: Number(payload.grade),
+        p_class_name: Number(payload.className)
+      });
+    } else {
+      throw new Error('unknown_action');
     }
-    return callGasApi(Object.assign({ action }, payload));
+    validateApiData(action, data);
+    return data;
   }
 
   function csvToIndexMap(csv) {
@@ -419,9 +328,7 @@
     const reset = options && options.reset;
     const payload = sheetPayloadFromGameProgress(gameProgress, medalIds);
     const hash = hashSavePayload(payload, reset);
-    if (!reset && hash === lastSavedHash) {
-      return null;
-    }
+    if (!reset && hash === lastSavedHash) return null;
 
     const data = await callBackend('saveProgress', {
       grade: session.grade,
@@ -447,15 +354,10 @@
         clearTimeout(saveDebounceTimer);
         saveDebounceTimer = null;
       }
-      saveQueue = saveQueue.then(() => runSaveProgress(
-        pendingSaveArgs.gameProgress,
-        pendingSaveArgs.medalIds,
-        pendingSaveArgs.options
-      ), () => runSaveProgress(
-        pendingSaveArgs.gameProgress,
-        pendingSaveArgs.medalIds,
-        pendingSaveArgs.options
-      ));
+      saveQueue = saveQueue.then(
+        () => runSaveProgress(pendingSaveArgs.gameProgress, pendingSaveArgs.medalIds, pendingSaveArgs.options),
+        () => runSaveProgress(pendingSaveArgs.gameProgress, pendingSaveArgs.medalIds, pendingSaveArgs.options)
+      );
       return saveQueue;
     }
 
@@ -465,18 +367,10 @@
         saveDebounceTimer = null;
         saveQueue = saveQueue.then(() => {
           if (!pendingSaveArgs) return null;
-          return runSaveProgress(
-            pendingSaveArgs.gameProgress,
-            pendingSaveArgs.medalIds,
-            pendingSaveArgs.options
-          );
+          return runSaveProgress(pendingSaveArgs.gameProgress, pendingSaveArgs.medalIds, pendingSaveArgs.options);
         }, () => {
           if (!pendingSaveArgs) return null;
-          return runSaveProgress(
-            pendingSaveArgs.gameProgress,
-            pendingSaveArgs.medalIds,
-            pendingSaveArgs.options
-          );
+          return runSaveProgress(pendingSaveArgs.gameProgress, pendingSaveArgs.medalIds, pendingSaveArgs.options);
         });
         saveQueue.then(resolve).catch(reject);
       }, SAVE_DEBOUNCE_MS);
@@ -523,11 +417,7 @@
     };
   }
 
-  /** 任意: 授業前にクラス分の空行を作成（Supabase のみ） */
   async function seedClassRows(grade, className, maxStudent) {
-    if (!isSupabaseConfigured()) {
-      throw new Error('supabase_only');
-    }
     return callSupabaseRpc('seed_class_rows', {
       p_grade: Number(grade),
       p_class_name: Number(className),
@@ -539,7 +429,6 @@
     isConfigured,
     isSupabaseConfigured,
     backendName,
-    getGasUrl,
     getSupabaseUrl,
     makeSessionKey,
     studentLogin,

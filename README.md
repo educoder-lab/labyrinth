@@ -2,7 +2,7 @@
 
 成蹊のマスコット「**けやっきー**」が、スクラッチ風の命令ブロックを組み立てて世界各地・宇宙のゴールを目指すプログラミング迷路ゲームです（全20ステージ）。
 
-小学校の授業向けに、**学年・組・出席番号ログイン**、**Supabase への進捗保存**（旧 Google スプレッドシートも互換対応）、教師用ダッシュボード、授業・研修用スライドを用意しています。
+小学校の授業向けに、**学年・組・出席番号ログイン**、**Supabase への進捗保存**、教師用ダッシュボード、授業・研修用スライドを用意しています。
 
 ---
 
@@ -61,45 +61,38 @@
 
 ## 🏫 授業ログイン（Supabase）
 
-**学年・組・出席番号**でログインし、クリア進捗を Supabase に保存します。教師はダッシュボードからクラス進捗の確認とテストプレイができます。  
-（旧 Google スプレッドシート + GAS も `gasUrl` があれば互換動作します。新規は Supabase 推奨）
+**学年・組・出席番号**でログインし、クリア進捗を Supabase に保存します。教師はダッシュボードからクラス進捗の確認とテストプレイができます。
 
-### セットアップ（約15〜30分）
+### セットアップ（初回のみ）
 
 1. [Supabase](https://supabase.com/) でプロジェクトを作成する  
-2. **SQL Editor** を開き、[`supabase/schema.sql`](supabase/schema.sql) の内容をすべて貼り付けて **Run**  
-3. **Project Settings → API** で次を控える  
-   - Project URL  
-   - `anon` `public` key  
+2. **SQL Editor** で [`supabase/schema.sql`](supabase/schema.sql) を実行する  
+3. **Project Settings → API** で Project URL と Publishable key を控える  
 4. [`config.js`](config.js) に貼る  
 
 ```js
 window.LABYRINTH_CONFIG = {
   supabaseUrl: 'https://xxxx.supabase.co',
-  supabaseAnonKey: 'eyJhbGciOi...',
-  gasUrl: '',
-  spreadsheetUrl: ''
+  supabaseAnonKey: 'sb_publishable_...'
 };
 ```
 
-5. 児童用ページでログイン・クリア保存をテストする  
-6. 教師画面（`teacher.html`）でパスワード `sensei`（初期値）でログインできることを確認する  
+5. 児童ログイン・クリア保存・教師ログインを確認する  
 
 #### 設定の変更（`app_config` テーブル）
 
 Supabase → Table Editor → `app_config`
 
-| key | 初期値 | 意味 |
-|-----|--------|------|
-| `teacherPassword` | `sensei` | 教師ログイン |
-| `allowedGrades` | `1,2,3,4,5,6` | 使える学年 |
-| `maxStudentNo` | `40` | 出席番号の上限 |
-| `maxClass` | `4` | 組の上限 |
+| key | 意味 |
+|-----|------|
+| `teacherPassword` | 教師ログイン用パスワード |
+| `allowedGrades` | 使える学年（例 `1,2,3,4,5,6`） |
+| `maxStudentNo` | 出席番号の上限 |
+| `maxClass` | 組の上限 |
 
 #### 授業前の準備（推奨）
 
-教師ダッシュボードの **「クラス行を用意」** で、選んだ学年・組の 1〜30 番行を一括作成できます。  
-（SQL でも可: `select seed_class_rows(3, 1, 30);`）
+教師ダッシュボードの **「クラス行を用意」** で、選んだ学年・組の 1〜30 番行を一括作成できます。
 
 ### 使い方
 
@@ -107,16 +100,16 @@ Supabase → Table Editor → `app_config`
 |------|------|
 | **生徒** | 学年・組（1〜4）・出席番号（1〜40）を選んで「はじめる」。前回のすすみがあるときは「つづきから／はじめから」を選択 |
 | **ゲスト** | 「まずはためす（ほぞんなし）」→ クラウド保存なし |
-| **教師** | `teacher.html` でパスワード → 学年・組を選んで進捗表 |
+| **教師** | `teacher.html` でパスワード入力 → 学年・組を選んで進捗表 |
 | **テストプレイ** | 教師画面の「ゲームをひらく」→ 進捗は保存されない |
 
 ### クラス30人前後で使うとき
 
 - Supabase は同時ログインに強いので、スプレッドシート時代より安定しやすいです  
-- それでも学校 Wi‑Fi 混雑時は、班ごとにログインをずらすと安心です  
+- 学校 Wi‑Fi が混雑しているときは、班ごとにログインをずらすと安心です  
 - 再読み込み時は端末の保存データを優先してすぐ開始し、裏でクラウドと同期します  
 
-> 個人名は扱いません。教師パスワードは授業用の簡易認証です。`anon` key はフロント公開前提ですが、テーブルは直接触れず RPC 経由のみです。パスワードは校外に広く公開しない運用を想定しています。
+> 個人名は扱いません。教師パスワードは授業用の簡易認証です。Publishable key はフロント公開前提ですが、テーブルは直接触れず RPC 経由のみです。
 
 ### トラブルシュート
 
@@ -125,19 +118,24 @@ Supabase → Table Editor → `app_config`
 
 - `config.js` の `supabaseUrl` / `supabaseAnonKey` が正しいか確認  
 - `schema.sql` を SQL Editor で実行済みか確認  
-- ブラウザの開発者ツール Network で `/rest/v1/rpc/student_login` の応答を確認  
 </details>
 
 <details>
 <summary>教師パスワードを変えたい</summary>
 
-Table Editor → `app_config` → `teacherPassword` の value を変更
+Table Editor → `app_config` → `teacherPassword` の value を変更  
+（または [`supabase/patch-password.sql`](supabase/patch-password.sql) を参考に SQL Editor で更新）
 </details>
 
 <details>
-<summary>旧スプレッドシート運用に戻す / 併用</summary>
+<summary>スプレッドシートからデータを移したい</summary>
 
-`supabaseUrl` と `supabaseAnonKey` を空にし、`gasUrl` を設定すると従来の GAS 連携で動きます。詳細は [`gas/README.md`](gas/README.md)。
+CSV を用意して次を実行:
+
+```bash
+node supabase/migrate-from-csv.mjs "your-progress.csv"
+```
+
 </details>
 
 ---
@@ -163,20 +161,18 @@ Table Editor → `app_config` → `teacherPassword` の value を変更
 
 ワークスペースに最初から「📌 指定ブロック」が置かれます。
 
-- **条件固定**: 回数や条件を変更できない（構造を活かして中身を埋める）
+- **条件固定**: 回数や条件を変更できない
 - **条件未固定**: セレクトで回数・条件を自分で変えられる
 - 指定ブロックを消すと、最短手数でも通常クリア扱い
 
 ### 「くりかえす」と「ゴールするまで」（スタンダード）
-
-初学者が混乱しないよう、1周目は段階的に解禁します。
 
 - **ステージ11〜15**: 🔁 くりかえす（for）のみ
 - **ステージ16〜20**: 🔄 ゴールするまで（while）のみ
 
 ### マスターコース
 
-ステージ20クリアで解禁。指定ブロックなし・全ブロック併用可。ゼロから別解に挑戦できます。
+ステージ20クリアで解禁。指定ブロックなし・全ブロック併用可。
 
 ### メダル
 
@@ -228,10 +224,10 @@ Table Editor → `app_config` → `teacherPassword` の value を変更
 |------|------|
 | `index.html` | 児童用ゲーム本体 |
 | `teacher.html` | 教師用ダッシュボード |
-| `config.js` | Supabase URL / anon key（または旧 gasUrl） |
+| `config.js` | Supabase URL / Publishable key |
 | `js/classroom-api.js` | ログイン・進捗保存クライアント |
-| `supabase/schema.sql` | Supabase テーブル・RPC・RLS |
-| `gas/Code.gs` | （旧）Google Apps Script API |
+| `supabase/schema.sql` | テーブル・RPC・RLS |
+| `supabase/migrate-from-csv.mjs` | 旧シート CSV からの移行用 |
 | `docs/授業スライド-小学3年.html` | 授業投影用スライド |
 | `docs/研修スライド-小学3年.html` | 先生向け研修スライド |
 
@@ -239,11 +235,8 @@ Table Editor → `app_config` → `teacherPassword` の value を変更
 
 ## 🔧 ローカルで開く場合
 
-静的サイトです。ローカルサーバーで開くか、GitHub Pages の URL をそのまま使えます。
-
 ```bash
-# 例（Python）
-python -m http.server 8080
+npx --yes serve -l 8080
 # → http://localhost:8080/
 ```
 

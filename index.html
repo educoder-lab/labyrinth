@@ -2166,7 +2166,7 @@
       </div>
       <p class="login-error" id="login-error"></p>
       <p class="login-hint" id="login-config-hint">
-        ※ 先生が Googleスプレッドシート連携を設定すると、すすみが保存されます
+        ※ 先生が連携を設定すると、すすみがクラウドに保存されます
       </p>
     </div>
   </div>
@@ -3219,7 +3219,7 @@
       ClassroomAPI.saveProgress(gameProgress, getUnlockedMedalIds(), options).catch((err) => {
         const code = err && err.code;
         if (code === 'html_response' || code === 'invalid_json' || code === 'empty_response') {
-          showSyncToast('GASを最新Code.gsで再デプロイしてから、もう一度ためしてね', true);
+          showSyncToast('クラウドとの せつぞくに しっぱいしたよ。もういちど ためしてね', true);
         } else if (code) {
           showSyncToast('すすみの ほぞんに しっぱい: ' + code, true);
         } else {
@@ -5020,9 +5020,7 @@
         if (!ClassroomAPI.isConfigured()) {
           loginHint.textContent = '※ まだ進捗のほぞんが設定されていません。授業で使うときは config.js を設定してください';
         } else {
-          loginHint.textContent = ClassroomAPI.isSupabaseConfigured && ClassroomAPI.isSupabaseConfigured()
-            ? '※ すすみは クラウド（Supabase）に ほぞんされます'
-            : '※ すすみは クラスの シートに ほぞんされます';
+          loginHint.textContent = '※ すすみは クラウドに ほぞんされます';
         }
       }
 
@@ -5108,15 +5106,13 @@
             const code = err && err.code;
             if (code === 'timeout') {
               loginError.textContent = 'せつぞくが タイムアウトしました。ネットワークを かくにんして もういちど ためしてね';
-            } else if (code === 'gas_stale_deploy' || code === 'api_invalid_response') {
-              loginError.textContent = 'サーバー設定を かくにんしてね（Supabase の schema.sql または GAS の再デプロイ）';
+            } else if (code === 'api_invalid_response') {
+              loginError.textContent = 'サーバー設定を かくにんしてね';
             } else if (code === 'supabase_auth_error') {
-              loginError.textContent = 'Supabase の URL / キーを かくにんしてね';
-            } else if (code === 'gas_org_only_cors' || code === 'gas_auth_required') {
-              loginError.textContent = 'GASの設定が「組織内のみ」になっています。Apps Script を「全員（匿名含む）」で再デプロイし、新しい URL を config.js に貼ってください';
+              loginError.textContent = 'クラウドの せっていを かくにんしてね';
             } else if (code === 'invalid_grade' || code === 'invalid_class' || code === 'invalid_student_no') {
               loginError.textContent = 'にゅうりょくが ただしくないよ';
-            } else if (err && (err.message === 'gas_url_missing' || err.message === 'supabase_not_configured')) {
+            } else if (err && err.message === 'supabase_not_configured') {
               loginError.textContent = '先生の せってい（config.js）が まだだよ';
             } else {
               loginError.textContent = 'せつぞくできなかったよ。もういちど ためしてね';

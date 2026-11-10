@@ -228,7 +228,7 @@
     </header>
 
     <div id="config-warn" class="config-warn hidden">
-      config.js の supabaseUrl / supabaseAnonKey（または旧 gasUrl）が未設定です。README のセットアップ手順を参照してください。
+      config.js の supabaseUrl / supabaseAnonKey が未設定です。README のセットアップ手順を参照してください。
     </div>
 
     <section class="card" id="login-panel">
@@ -239,7 +239,6 @@
         </div>
         <p class="error" id="login-error"></p>
         <button type="button" class="btn" id="btn-teacher-login">ログイン</button>
-        <p class="meta">初期パスワードは app_config の teacherPassword（初期値: sensei）です。</p>
       </div>
     </section>
 
@@ -267,8 +266,7 @@
         </div>
         <div class="actions">
           <button type="button" class="btn" id="btn-reload">再読み込み</button>
-          <button type="button" class="btn btn-secondary hidden" id="btn-seed-class" title="授業前に空の進捗行をまとめて作成">クラス行を用意</button>
-          <a class="btn btn-secondary hidden" id="btn-open-sheet" href="#" target="_blank" rel="noopener">スプレッドシートをひらく</a>
+          <button type="button" class="btn btn-secondary" id="btn-seed-class" title="授業前に空の進捗行をまとめて作成">クラス行を用意</button>
           <a class="btn btn-secondary" id="btn-test-play" href="index.html?mode=teacher" target="_blank" rel="noopener">ゲームをひらく（テストプレイ）</a>
         </div>
       </div>
@@ -404,7 +402,7 @@
     btnLogin.addEventListener('click', async () => {
       loginError.textContent = '';
       if (!ClassroomAPI.isConfigured()) {
-        loginError.textContent = 'config.js の supabaseUrl / supabaseAnonKey（または gasUrl）が未設定です';
+        loginError.textContent = 'config.js の supabaseUrl / supabaseAnonKey が未設定です';
         return;
       }
       const password = document.getElementById('teacher-password').value;
@@ -414,9 +412,7 @@
         showDashboard();
         await reloadProgress();
       } catch (err) {
-        if (err && (err.code === 'gas_org_only_cors' || err.code === 'gas_auth_required')) {
-          loginError.textContent = 'GASが「組織内のみ」です。Apps Script を「全員（匿名含む）」で再デプロイし、config.js の gasUrl を更新してください';
-        } else if (err && err.code === 'supabase_auth_error') {
+        if (err && err.code === 'supabase_auth_error') {
           loginError.textContent = 'Supabase の URL / anon key を確認してください';
         } else if (err && err.code === 'bad_password') {
           loginError.textContent = 'パスワードが違います';
@@ -442,10 +438,6 @@
     const btnSeedClass = document.getElementById('btn-seed-class');
     if (btnSeedClass) {
       btnSeedClass.addEventListener('click', async () => {
-        if (!ClassroomAPI.isSupabaseConfigured || !ClassroomAPI.isSupabaseConfigured()) {
-          alert('この機能は Supabase 利用時のみ使えます');
-          return;
-        }
         const grade = document.getElementById('dash-grade').value;
         const className = document.getElementById('dash-class').value;
         if (!confirm(`${grade}年${className}組の 1〜30番の行を用意しますか？`)) return;
@@ -455,7 +447,7 @@
           await reloadProgress();
           alert('クラス行を用意しました');
         } catch (err) {
-          alert('作成に失敗しました。接続と schema.sql の適用を確認してください');
+          alert('作成に失敗しました。接続を確認してください');
         } finally {
           btnSeedClass.disabled = false;
         }
@@ -463,16 +455,6 @@
     }
 
     window.addEventListener('DOMContentLoaded', () => {
-      const sheetBtn = document.getElementById('btn-open-sheet');
-      const sheetUrl = (window.LABYRINTH_CONFIG && window.LABYRINTH_CONFIG.spreadsheetUrl || '').trim();
-      if (sheetBtn && sheetUrl) {
-        sheetBtn.href = sheetUrl;
-        sheetBtn.classList.remove('hidden');
-      }
-      if (btnSeedClass && ClassroomAPI.isSupabaseConfigured && ClassroomAPI.isSupabaseConfigured()) {
-        btnSeedClass.classList.remove('hidden');
-      }
-
       if (!ClassroomAPI.isConfigured()) {
         configWarn.classList.remove('hidden');
       }

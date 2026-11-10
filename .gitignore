@@ -1,0 +1,9 @@
+# ローカル作業ファイル
+*.csv
+.env
+.env.*
+.DS_Store
+Thumbs.db
+
+# 一時スクリプト出力
+supabase/verify-migration.mjs
